@@ -1,0 +1,8 @@
+# Copy this file to android/key.properties and fill in with your release
+# keystore details. The file is read by android/app/build.gradle.kts when
+# building a release .aab / .apk. Keep key.properties out of git.
+
+storeFile=../fipzonee-release.keystore
+storePassword=changeme
+keyAlias=fipzonee
+keyPassword=changeme
