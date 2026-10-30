@@ -446,6 +446,138 @@ class _OnboardingState extends State<Onboarding> {
   );
 }
 
+/// Shows a remote image from a possibly-relative API `path`, falling back to
+/// [fallback] (or a plain forest tile) if the path is null/empty or the load
+/// fails.
+class RemoteImage extends StatelessWidget {
+  final String? path;
+  final BoxFit fit;
+  final Widget? fallback;
+  const RemoteImage({
+    super.key,
+    required this.path,
+    this.fit = BoxFit.cover,
+    this.fallback,
+  });
+  @override
+  Widget build(BuildContext context) {
+    final url = assetUrl(path);
+    if (url == null) {
+      return fallback ?? Container(color: forest.withValues(alpha: .08));
+    }
+    return Image.network(
+      url,
+      fit: fit,
+      errorBuilder: (_, __, ___) =>
+          fallback ?? Container(color: forest.withValues(alpha: .08)),
+      loadingBuilder: (c, child, p) => p == null
+          ? child
+          : Container(
+              color: const Color(0xFFF2F5F2),
+              child: const Center(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
+            ),
+    );
+  }
+}
+
+/// Circular player avatar: shows photo if available, otherwise first-initial
+/// on a gold circle.
+class PlayerAvatar extends StatelessWidget {
+  final String? photoPath;
+  final String name;
+  final double size;
+  const PlayerAvatar({
+    super.key,
+    required this.photoPath,
+    required this.name,
+    this.size = 48,
+  });
+  @override
+  Widget build(BuildContext context) {
+    final url = assetUrl(photoPath);
+    final initial = name.trim().isNotEmpty ? name.trim()[0].toUpperCase() : '?';
+    final placeholder = Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(color: gold, shape: BoxShape.circle),
+      alignment: Alignment.center,
+      child: Text(
+        initial,
+        style: TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.w800,
+          fontSize: size * 0.42,
+        ),
+      ),
+    );
+    if (url == null) return placeholder;
+    return ClipOval(
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Image.network(
+          url,
+          fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => placeholder,
+        ),
+      ),
+    );
+  }
+}
+
+/// Square club/federation badge: logo if available, otherwise a cream tile
+/// stamped with the country-flag emoji.
+class OrgBadge extends StatelessWidget {
+  final String? logoPath;
+  final String? countryIso;
+  final double size;
+  final double radius;
+  const OrgBadge({
+    super.key,
+    required this.logoPath,
+    required this.countryIso,
+    this.size = 48,
+    this.radius = 10,
+  });
+  @override
+  Widget build(BuildContext context) {
+    final url = assetUrl(logoPath);
+    final placeholder = Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4DC),
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(color: const Color(0xFFE9D7A3)),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        flagEmoji(countryIso),
+        style: TextStyle(fontSize: size * 0.55),
+      ),
+    );
+    if (url == null) return placeholder;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: Image.network(
+          url,
+          fit: BoxFit.contain,
+          errorBuilder: (_, __, ___) => placeholder,
+        ),
+      ),
+    );
+  }
+}
+
 class Brand extends StatelessWidget {
   final bool light, large;
   const Brand({super.key, this.light = false, this.large = false});
@@ -1426,15 +1558,6 @@ class FederationsPage extends StatefulWidget {
 class _FederationsPageState extends State<FederationsPage> {
   String query = '';
 
-  String _flagEmoji(String? iso) {
-    if (iso == null || iso.length != 2) return '🏳️';
-    final cc = iso.toUpperCase();
-    return String.fromCharCodes([
-      0x1F1E6 + (cc.codeUnitAt(0) - 0x41),
-      0x1F1E6 + (cc.codeUnitAt(1) - 0x41),
-    ]);
-  }
-
   @override
   Widget build(BuildContext context) {
     return Shell(
@@ -1513,7 +1636,8 @@ class _FederationsPageState extends State<FederationsPage> {
               itemCount: results.length,
               itemBuilder: (_, i) {
                 final r = results[i];
-                final flag = _flagEmoji(r['country_iso'] as String?);
+                final iso = r['country_iso'] as String?;
+                final flag = flagEmoji(iso);
                 final country =
                     (r['country_name'] ?? r['country_iso'] ?? 'Country')
                         as String;
@@ -1529,7 +1653,11 @@ class _FederationsPageState extends State<FederationsPage> {
                           context,
                           CountryPage(flag: flag, country: country),
                         ),
-                    leading: Text(flag, style: const TextStyle(fontSize: 26)),
+                    leading: OrgBadge(
+                      logoPath: r['logo_path'] as String?,
+                      countryIso: iso,
+                      size: 44,
+                    ),
                     title: Text(
                       country,
                       style: const TextStyle(
@@ -1659,13 +1787,27 @@ class NetworkPage extends StatelessWidget {
         ),
         SizedBox(
           height: 148,
-          child: ListView(
-            scrollDirection: Axis.horizontal,
-            children: const [
-              PlayerCard('Amine El Fassi', 'Morocco'),
-              PlayerCard('Jamen Okoro', 'Nigeria'),
-              PlayerCard('Maya Khalid', 'UAE'),
-            ],
+          child: ApiBuilder<List<Map<String, dynamic>>>(
+            load: fetchPlayers,
+            onLoading: (_) => const SizedBox.shrink(),
+            onError: (_, __, ___) => const SizedBox.shrink(),
+            onData: (c, rows) {
+              final top = rows.take(6).toList();
+              if (top.isEmpty) {
+                return Center(
+                  child: Text(
+                    'No players yet.',
+                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                  ),
+                );
+              }
+              return ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  for (final p in top) PlayerCard.fromApi(p),
+                ],
+              );
+            },
           ),
         ),
         const SizedBox(height: 12),
@@ -1689,38 +1831,67 @@ class NetworkPage extends StatelessWidget {
 
 class PlayerCard extends StatelessWidget {
   final String name, country;
-  const PlayerCard(this.name, this.country, {super.key});
+  final String? countryIso, photoPath;
+  const PlayerCard(this.name, this.country,
+      {super.key, this.countryIso, this.photoPath});
+
+  factory PlayerCard.fromApi(Map<String, dynamic> p) {
+    final legal = (p['legal_name'] ?? '') as String;
+    final name = legal.trim().isNotEmpty
+        ? legal
+        : [
+            (p['first_name'] ?? '') as String,
+            (p['surname'] ?? '') as String,
+          ].where((s) => s.trim().isNotEmpty).join(' ');
+    return PlayerCard(
+      name,
+      (p['nationality_name'] ?? p['nationality_iso'] ?? '') as String,
+      countryIso: p['nationality_iso'] as String?,
+      photoPath: p['photo_path'] as String?,
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Container(
-    width: 115,
+    width: 128,
     margin: const EdgeInsets.only(right: 10),
     decoration: BoxDecoration(
       color: Colors.white,
       borderRadius: BorderRadius.circular(12),
+      border: Border.all(color: const Color(0xFFE7E9E4)),
     ),
+    padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        Expanded(
-          child: ClipRRect(
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
-            child: Image.asset(hero, width: 115, fit: BoxFit.cover),
-          ),
+        Center(
+          child: PlayerAvatar(photoPath: photoPath, name: name, size: 60),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 6, 8, 2),
-          child: Text(
-            name,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
-            overflow: TextOverflow.ellipsis,
-          ),
+        const SizedBox(height: 10),
+        Text(
+          name,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+              fontSize: 11, fontWeight: FontWeight.w800, height: 1.15,
+              color: forest),
         ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(8, 0, 8, 7),
-          child: Text(
-            country,
-            style: const TextStyle(fontSize: 11, color: Color(0xFF67736D)),
-          ),
+        const SizedBox(height: 2),
+        Row(
+          children: [
+            Text(flagEmoji(countryIso), style: const TextStyle(fontSize: 11)),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                country,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                    fontSize: 10, color: Color(0xFF67736D)),
+              ),
+            ),
+          ],
         ),
       ],
     ),
@@ -2961,81 +3132,127 @@ class MyTicketsPage extends StatelessWidget {
   );
 }
 
-class GalleryPage extends StatelessWidget {
+class GalleryPage extends StatefulWidget {
   const GalleryPage({super.key});
   @override
+  State<GalleryPage> createState() => _GalleryPageState();
+}
+
+class _GalleryPageState extends State<GalleryPage> {
+  String category = 'All';
+
+  @override
   Widget build(BuildContext context) {
-    final pictures = [hero, club, trophy, hero, club, trophy, hero, club, hero];
     return Shell(
       title: 'Gallery',
       tab: 3,
-      body: Column(
-        children: [
-          Padding(
+      body: ApiBuilder<Map<String, dynamic>>(
+        load: fetchGallery,
+        onData: (c, snap) => _buildBody(c, snap),
+      ),
+    );
+  }
+
+  Widget _buildBody(BuildContext context, Map<String, dynamic> snap) {
+    final items = (snap['data'] as List? ?? const [])
+        .cast<Map<String, dynamic>>()
+        .toList();
+    final cats = <String>[
+      'All',
+      ...((snap['categories'] as List? ?? const []).whereType<String>()),
+    ];
+    final shown = category == 'All'
+        ? items
+        : items.where((p) => p['category'] == category).toList();
+    return Column(
+      children: [
+        SizedBox(
+          height: 48,
+          child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-            child: Row(
-              children:
-                  ['All', 'Tournaments', 'Players', 'Clubs']
-                      .map(
-                        (x) => Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: FilterChip(
-                            label: Text(
-                              x,
-                              style: const TextStyle(fontSize: 10),
-                            ),
-                            selected: x == 'All',
-                            onSelected: (_) {},
-                          ),
-                        ),
-                      )
-                      .toList(),
-            ),
+            scrollDirection: Axis.horizontal,
+            children: [
+              for (final x in cats)
+                Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: FilterChip(
+                    label: Text(x, style: const TextStyle(fontSize: 11)),
+                    selected: x == category,
+                    onSelected: (_) => setState(() => category = x),
+                  ),
+                ),
+            ],
           ),
+        ),
+        if (shown.isEmpty)
+          const Expanded(
+            child: Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'No photos in this category yet.',
+                  style: TextStyle(fontSize: 13, color: Color(0xFF637067)),
+                ),
+              ),
+            ),
+          )
+        else
           Expanded(
             child: GridView.builder(
               padding: const EdgeInsets.all(16),
-              itemCount: pictures.length,
+              itemCount: shown.length,
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                 crossAxisCount: 2,
                 crossAxisSpacing: 9,
                 mainAxisSpacing: 9,
                 childAspectRatio: .95,
               ),
-              itemBuilder:
-                  (_, i) => InkWell(
-                    onTap:
-                        () => push(
-                          context,
-                          PhotoPreview(image: pictures[i], number: i + 1),
-                        ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.asset(pictures[i], fit: BoxFit.cover),
+              itemBuilder: (_, i) {
+                final item = shown[i];
+                final path = item['image_path'] as String?;
+                final title = (item['title'] ?? '') as String;
+                return InkWell(
+                  onTap: () => push(
+                    context,
+                    PhotoPreview(
+                      imagePath: path,
+                      caption: (item['caption'] ?? title) as String,
                     ),
                   ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: RemoteImage(path: path),
+                  ),
+                );
+              },
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 }
 
 class PhotoPreview extends StatelessWidget {
-  final String image;
-  final int number;
-  const PhotoPreview({super.key, required this.image, required this.number});
+  final String? imagePath;
+  final String caption;
+  const PhotoPreview({
+    super.key,
+    required this.imagePath,
+    this.caption = '',
+  });
   @override
   Widget build(BuildContext context) => Scaffold(
     backgroundColor: Colors.black,
     appBar: AppBar(
       backgroundColor: Colors.black,
       foregroundColor: Colors.white,
-      title: Text('Photo ' + number.toString()),
+      title: Text(caption.isEmpty ? 'Photo' : caption, maxLines: 1,
+          overflow: TextOverflow.ellipsis),
     ),
     body: Center(
-      child: InteractiveViewer(child: Image.asset(image, fit: BoxFit.contain)),
+      child: InteractiveViewer(
+        child: RemoteImage(path: imagePath, fit: BoxFit.contain),
+      ),
     ),
     bottomNavigationBar: SafeArea(
       child: Padding(
@@ -5401,22 +5618,8 @@ class _PlayersListPageState extends State<PlayersListPage> {
   String q = '';
   String band = 'All';
   static const _bands = ['All', '10 goals', '7–9', '4–6', '0–3'];
-  static const _players = <(String, String, String, int)>[
-    ('🇲🇦', 'Amine El Fassi', 'Morocco', 10),
-    ('🇦🇪', 'Rashid Al Marri', 'UAE', 9),
-    ('🇳🇬', 'Jamen Okoro', 'Nigeria', 9),
-    ('🇵🇰', 'Hassan Khan', 'Pakistan', 8),
-    ('🇪🇬', 'Omar Nabil', 'Egypt', 7),
-    ('🇮🇷', 'Reza Bahrami', 'Iran', 7),
-    ('🇦🇪', 'Maya Khalid', 'UAE', 6),
-    ('🇲🇦', 'Youssef Bennani', 'Morocco', 6),
-    ('🇳🇬', 'Dapo Williams', 'Nigeria', 5),
-    ('🇵🇰', 'Imran Qureshi', 'Pakistan', 4),
-    ('🇪🇬', 'Khaled Hassan', 'Egypt', 3),
-    ('🇦🇪', 'Sultan Mubarak', 'UAE', 2),
-  ];
 
-  bool _bandMatch(int h) {
+  bool _bandMatch(double h) {
     switch (band) {
       case '10 goals':
         return h == 10;
@@ -5431,61 +5634,96 @@ class _PlayersListPageState extends State<PlayersListPage> {
     }
   }
 
+  double _hcp(Map<String, dynamic> p) {
+    final raw = p['handicap'];
+    if (raw is num) return raw.toDouble();
+    if (raw is String) return double.tryParse(raw) ?? 0;
+    return 0;
+  }
+
+  String _fullName(Map<String, dynamic> p) {
+    final legal = (p['legal_name'] ?? '') as String;
+    if (legal.trim().isNotEmpty) return legal;
+    final first = (p['first_name'] ?? '') as String;
+    final sur = (p['surname'] ?? '') as String;
+    return [first, sur].where((s) => s.trim().isNotEmpty).join(' ');
+  }
+
   @override
   Widget build(BuildContext context) {
-    final shown =
-        _players
-            .where(
-              (p) =>
-                  _bandMatch(p.$4) &&
-                  p.$2.toLowerCase().contains(q.toLowerCase()),
-            )
-            .toList();
     return Shell(
       title: 'Players',
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 10, 16, 7),
-            child: TextField(
-              onChanged: (v) => setState(() => q = v),
-              decoration: const InputDecoration(
-                prefixIcon: Icon(Icons.search),
-                hintText: 'Search players...',
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.all(Radius.circular(12)),
-                  borderSide: BorderSide.none,
-                ),
+      body: ApiBuilder<List<Map<String, dynamic>>>(
+        load: fetchPlayers,
+        onData: (c, rows) => _buildBody(c, rows),
+      ),
+    );
+  }
+
+  Widget _buildBody(BuildContext context, List<Map<String, dynamic>> rows) {
+    final query = q.toLowerCase();
+    final shown = rows.where((p) {
+      final name = _fullName(p).toLowerCase();
+      final number = ((p['public_number'] ?? '') as String).toLowerCase();
+      return _bandMatch(_hcp(p)) &&
+          (query.isEmpty || name.contains(query) || number.contains(query));
+    }).toList();
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 7),
+          child: TextField(
+            onChanged: (v) => setState(() => q = v),
+            decoration: const InputDecoration(
+              prefixIcon: Icon(Icons.search),
+              hintText: 'Search players...',
+              filled: true,
+              fillColor: Colors.white,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.all(Radius.circular(12)),
+                borderSide: BorderSide.none,
               ),
             ),
           ),
-          SizedBox(
-            height: 36,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              children: [
-                for (final b in _bands)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 7),
-                    child: ChoiceChip(
-                      label: Text(b, style: const TextStyle(fontSize: 11)),
-                      selected: band == b,
-                      onSelected: (_) => setState(() => band = b),
-                      selectedColor: forest,
-                      labelStyle: TextStyle(
-                        color: band == b ? Colors.white : forest,
-                        fontWeight: FontWeight.w700,
-                      ),
-                      backgroundColor: Colors.white,
-                      side: BorderSide(color: forest.withValues(alpha: .2)),
+        ),
+        SizedBox(
+          height: 36,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            children: [
+              for (final b in _bands)
+                Padding(
+                  padding: const EdgeInsets.only(right: 7),
+                  child: ChoiceChip(
+                    label: Text(b, style: const TextStyle(fontSize: 11)),
+                    selected: band == b,
+                    onSelected: (_) => setState(() => band = b),
+                    selectedColor: forest,
+                    labelStyle: TextStyle(
+                      color: band == b ? Colors.white : forest,
+                      fontWeight: FontWeight.w700,
                     ),
+                    backgroundColor: Colors.white,
+                    side: BorderSide(color: forest.withValues(alpha: .2)),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
+        ),
+        if (shown.isEmpty)
+          const Expanded(
+            child: Center(
+              child: Padding(
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  'No players match your search.',
+                  style: TextStyle(fontSize: 13, color: Color(0xFF637067)),
+                ),
+              ),
+            ),
+          )
+        else
           Expanded(
             child: GridView.builder(
               padding: const EdgeInsets.all(16),
@@ -5494,68 +5732,77 @@ class _PlayersListPageState extends State<PlayersListPage> {
                 maxCrossAxisExtent: 220,
                 mainAxisSpacing: 11,
                 crossAxisSpacing: 11,
-                mainAxisExtent: 240,
+                mainAxisExtent: 220,
               ),
-              itemBuilder: (_, i) => _PlayerTile(shown[i]),
+              itemBuilder: (_, i) {
+                final p = shown[i];
+                return _PlayerTile(
+                  name: _fullName(p),
+                  countryIso: p['nationality_iso'] as String?,
+                  countryName:
+                      (p['nationality_name'] ?? p['nationality_iso'] ?? '')
+                          as String,
+                  publicNumber: (p['public_number'] ?? '') as String,
+                  photoPath: p['photo_path'] as String?,
+                  handicap: _hcp(p),
+                );
+              },
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 }
 
 class _PlayerTile extends StatelessWidget {
-  final (String, String, String, int) p;
-  const _PlayerTile(this.p);
+  final String name, countryName, publicNumber;
+  final String? countryIso, photoPath;
+  final double handicap;
+  const _PlayerTile({
+    required this.name,
+    required this.countryIso,
+    required this.countryName,
+    required this.publicNumber,
+    required this.photoPath,
+    required this.handicap,
+  });
+
+  String get _hcpLabel {
+    final rounded = handicap.toStringAsFixed(0);
+    return handicap == double.parse(rounded)
+        ? '$rounded HCP'
+        : '${handicap.toStringAsFixed(1)} HCP';
+  }
+
   @override
   Widget build(BuildContext context) => InkWell(
-    onTap: () => note(context, 'Opening ${p.$2}'),
-    borderRadius: BorderRadius.circular(14),
-    child: Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
+        onTap: () => note(context, 'Opening $name'),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE7E9E4)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          SizedBox(
-            height: 170,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                Image.asset(
-                  hero,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, __, ___) => Container(color: forest),
-                ),
-                const DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [Colors.transparent, Color(0x99000000)],
-                    ),
-                  ),
-                ),
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: Container(
+        child: Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: const Color(0xFFE7E9E4)),
+          ),
+          clipBehavior: Clip.antiAlias,
+          padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                children: [
+                  PlayerAvatar(photoPath: photoPath, name: name, size: 54),
+                  const Spacer(),
+                  Container(
                     padding: const EdgeInsets.symmetric(
-                      horizontal: 7,
-                      vertical: 3,
-                    ),
+                        horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: gold,
                       borderRadius: BorderRadius.circular(7),
                     ),
                     child: Text(
-                      '${p.$4} HCP',
+                      _hcpLabel,
                       style: const TextStyle(
                         fontSize: 10,
                         color: Colors.white,
@@ -5563,49 +5810,57 @@ class _PlayerTile extends StatelessWidget {
                       ),
                     ),
                   ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Text(
+                name,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                  height: 1.15,
+                  color: forest,
                 ),
-                Positioned(
-                  left: 8,
-                  bottom: 8,
-                  child: Text(p.$1, style: const TextStyle(fontSize: 22)),
-                ),
-              ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(10, 7, 10, 9),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Text(
+                    flagEmoji(countryIso),
+                    style: const TextStyle(fontSize: 14),
+                  ),
+                  const SizedBox(width: 5),
+                  Expanded(
+                    child: Text(
+                      countryName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF637067),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (publicNumber.isNotEmpty) ...[
+                const SizedBox(height: 6),
                 Text(
-                  p.$2,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+                  publicNumber,
                   style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    height: 1.1,
+                    fontSize: 10,
+                    color: Color(0xFF9BA8A1),
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: .4,
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  p.$3,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 11,
-                    color: Color(0xFF637067),
-                    height: 1.1,
-                  ),
-                ),
               ],
-            ),
+            ],
           ),
-        ],
-      ),
-    ),
-  );
+        ),
+      );
 }
 
 // =============================================================
@@ -5613,109 +5868,137 @@ class _PlayerTile extends StatelessWidget {
 // =============================================================
 class ClubsListPage extends StatelessWidget {
   const ClubsListPage({super.key});
-  static const _clubs = <(String, String, String, int, int)>[
-    (
-      'Dubai Polo & Equestrian Club',
-      '🇦🇪 United Arab Emirates',
-      club,
-      1976,
-      320,
-    ),
-    ('Guards Polo Club Lagos', '🇳🇬 Nigeria', hero, 1962, 180),
-    ('Royal Rabat Polo Club', '🇲🇦 Morocco', trophy, 1935, 140),
-    ('Lahore Polo Club', '🇵🇰 Pakistan', hero, 1886, 210),
-    ('Cairo Polo Club', '🇪🇬 Egypt', club, 1902, 150),
-    ('Isfahan Polo Grounds', '🇮🇷 Iran', trophy, 1948, 95),
-    ('Al Habtoor Polo Resort', '🇦🇪 United Arab Emirates', club, 2013, 260),
-  ];
   @override
   Widget build(BuildContext context) => Shell(
-    title: 'Clubs',
-    body: ListView(
-      padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
-      children: [
-        const PhotoHeader(
-          image: club,
-          title: 'Zone E Clubs',
-          subtitle: 'Member clubs across the region',
+        title: 'Clubs',
+        body: ApiBuilder<List<Map<String, dynamic>>>(
+          load: fetchClubs,
+          onData: (c, rows) => ListView(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 24),
+            children: [
+              const PhotoHeader(
+                image: club,
+                title: 'Zone E Clubs',
+                subtitle: 'Member clubs across the region',
+              ),
+              const SizedBox(height: 15),
+              if (rows.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 24),
+                  child: Center(
+                    child: Text(
+                      'No clubs available yet.',
+                      style: TextStyle(fontSize: 13, color: Color(0xFF637067)),
+                    ),
+                  ),
+                )
+              else
+                for (final r in rows) _ClubTile(r),
+            ],
+          ),
         ),
-        const SizedBox(height: 15),
-        for (final c in _clubs) _ClubTile(c),
-      ],
-    ),
-  );
+      );
 }
 
 class _ClubTile extends StatelessWidget {
-  final (String, String, String, int, int) c;
+  final Map<String, dynamic> c;
   const _ClubTile(this.c);
   @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: () => note(context, 'Opening ${c.$1}'),
-    borderRadius: BorderRadius.circular(15),
-    child: Container(
-      margin: const EdgeInsets.only(bottom: 11),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: const Color(0xFFE7E9E4)),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Row(
-        children: [
-          SizedBox(
-            width: 102,
-            height: 102,
-            child: Image.asset(
-              c.$3,
-              fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => Container(color: forest),
+  Widget build(BuildContext context) {
+    final name = (c['legal_name'] ?? c['short_name'] ?? 'Club') as String;
+    final country =
+        (c['country_name'] ?? c['country_iso'] ?? '') as String;
+    final iso = c['country_iso'] as String?;
+    final federation = (c['federation'] ?? '') as String;
+    final members = c['members'];
+    final teams = c['teams'];
+    return InkWell(
+      onTap: () => note(context, 'Opening $name'),
+      borderRadius: BorderRadius.circular(15),
+      child: Container(
+        margin: const EdgeInsets.only(bottom: 11),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(15),
+          border: Border.all(color: const Color(0xFFE7E9E4)),
+        ),
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          children: [
+            OrgBadge(
+              logoPath: c['logo_path'] as String?,
+              countryIso: iso,
+              size: 72,
+              radius: 12,
             ),
-          ),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
+            const SizedBox(width: 12),
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    c.$1,
+                    name,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w800,
                       height: 1.2,
+                      color: forest,
                     ),
                   ),
                   const SizedBox(height: 3),
-                  Text(
-                    c.$2,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      color: Color(0xFF637067),
-                    ),
+                  Row(
+                    children: [
+                      Text(flagEmoji(iso),
+                          style: const TextStyle(fontSize: 13)),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          country,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF637067),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
+                  if (federation.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      federation,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 10, color: Color(0xFF9BA8A1)),
+                    ),
+                  ],
                   const SizedBox(height: 7),
                   Row(
                     children: [
-                      _MiniStat(Icons.calendar_today_outlined, 'Est. ${c.$4}'),
-                      const SizedBox(width: 11),
-                      _MiniStat(Icons.groups_outlined, '${c.$5} members'),
+                      if (members is num)
+                        _MiniStat(Icons.groups_outlined, '$members members'),
+                      if (members is num && teams is num && teams > 0)
+                        const SizedBox(width: 11),
+                      if (teams is num && teams > 0)
+                        _MiniStat(Icons.shield_outlined, '$teams teams'),
                     ],
                   ),
                 ],
               ),
             ),
-          ),
-          const Padding(
-            padding: EdgeInsets.only(right: 9),
-            child: Icon(Icons.chevron_right),
-          ),
-        ],
+            const Padding(
+              padding: EdgeInsets.only(right: 2),
+              child: Icon(Icons.chevron_right),
+            ),
+          ],
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 class _MiniStat extends StatelessWidget {

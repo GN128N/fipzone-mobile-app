@@ -116,6 +116,27 @@ Future<List<Map<String, dynamic>>> fetchClubs() async {
   return [for (final r in data) Map<String, dynamic>.from(r as Map)];
 }
 
+Future<Map<String, dynamic>> fetchGallery() async {
+  final body = await apiGet('/gallery');
+  if (body is! Map) {
+    return {'data': const <dynamic>[], 'categories': const <String>[]};
+  }
+  return Map<String, dynamic>.from(body);
+}
+
+/// Emoji flag for a two-letter ISO country code (e.g. "NG" → 🇳🇬).
+/// Returns a neutral flag when the code is missing or invalid.
+String flagEmoji(String? iso) {
+  if (iso == null || iso.length != 2) return '🏳️';
+  final cc = iso.toUpperCase();
+  final a = cc.codeUnitAt(0), b = cc.codeUnitAt(1);
+  if (a < 0x41 || a > 0x5A || b < 0x41 || b > 0x5A) return '🏳️';
+  return String.fromCharCodes([
+    0x1F1E6 + (a - 0x41),
+    0x1F1E6 + (b - 0x41),
+  ]);
+}
+
 /// Generic loader widget: renders [onLoading] while fetching, [onError] on error,
 /// [onData] when data arrives. Keeps call sites short.
 class ApiBuilder<T> extends StatefulWidget {
