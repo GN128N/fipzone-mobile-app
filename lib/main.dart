@@ -6594,7 +6594,7 @@ class _SettingsPageState extends State<SettingsPage> {
           Icons.shield_outlined,
           'Privacy policy',
           '',
-          onTap: () => note(context, 'Privacy policy'),
+          onTap: () => push(context, const PrivacyPolicyPage()),
         ),
         _tile(
           Icons.description_outlined,
@@ -6812,6 +6812,51 @@ class _SettingsPageState extends State<SettingsPage> {
     );
     if (r != null) setState(() => language = r);
   }
+}
+
+class PrivacyPolicyPage extends StatelessWidget {
+  const PrivacyPolicyPage({super.key});
+
+  @override
+  Widget build(BuildContext context) => Shell(
+    title: 'Privacy policy',
+    body: ListView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+      children: const [
+        Text('FIP Zone E Privacy Policy', style: TextStyle(fontSize: 23, fontWeight: FontWeight.w700, color: forest)),
+        SizedBox(height: 5),
+        Text('Last updated: 2 November 2026', style: TextStyle(color: Color(0xFF637067))),
+        SizedBox(height: 18),
+        Text('This policy explains how the FIP Zone E Polo Association handles information when you use the FIP Zone E website and mobile application.'),
+        _PrivacyHeading('Information we handle'),
+        Text('The app requests public content from our servers, including tournaments, scores, federations, players, clubs and gallery items. To return this content, our server and hosting infrastructure process basic connection information in real time, such as your IP address, request time, requested resource and basic network information. FIP Zone E does not retain this connection information or use it for analytics, profiling, advertising or abuse prevention; it is processed only as needed to deliver the requested content.'),
+        SizedBox(height: 10),
+        Text('If you contact us, use a member account, submit an enquiry or register for an event, we may handle information you provide, such as your name, email address, phone number, country, account credentials (stored as a protected password hash), and your message or registration details.'),
+        SizedBox(height: 10),
+        Text('For website ticket purchases, payment details needed to process and reconcile a transaction may be shared with Flutterwave. Card or bank credentials are handled by the payment provider and are not stored by FIP Zone E.'),
+        SizedBox(height: 10),
+        Text('The app requires internet access to load content. It does not request access to precise location, contacts, camera, microphone, photos or files, and does not use advertising identifiers or push notification services.'),
+        _PrivacyHeading('How information is used and shared'),
+        Text('We use information to provide the services you request, respond to enquiries, manage accounts or events, process payments, secure the services and meet legal obligations. As needed, information is shared with our hosting and infrastructure providers, transactional email providers, Flutterwave for payments, relevant federations or event organisers, and authorities when legally required. We do not sell personal information or use app data for advertising or behavioural profiling.'),
+        _PrivacyHeading('Retention and your choices'),
+        Text('We retain information as needed to provide services, keep appropriate records, resolve disputes and meet legal or security requirements. You may request access to, correction of or deletion of your information, subject to applicable law and record keeping obligations. Contact info@fipzonee.org. Do not send your password.'),
+        _PrivacyHeading('Children and international processing'),
+        Text('The services are not designed to collect personal information directly from children. FIP Zone E and its service providers may process information in countries other than your own, with safeguards applied where required.'),
+        _PrivacyHeading('Policy changes and contact'),
+        Text('We may update this policy as our services or practices change. The current full policy is available at https://fipzone.com/privacy.php. For privacy questions or requests, contact info@fipzonee.org.'),
+      ],
+    ),
+  );
+}
+
+class _PrivacyHeading extends StatelessWidget {
+  final String text;
+  const _PrivacyHeading(this.text);
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(top: 24, bottom: 8),
+    child: Text(text, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: forest)),
+  );
 }
 
 // =============================================================
